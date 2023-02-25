@@ -28,15 +28,21 @@ def train(args):
   model = M.resnet50(weights=M.ResNet50_Weights.DEFAULT).to(device)
   optimizer = Adam(model.parameters(), lr=args.lr)
 
-  fp = log_dp / f'model-best.pth'
+  best_acc = 0.0
+  epoch = 0
+  step = 0
+  
+  fp = log_dp / 'model-best.pth'
   if fp.exists():
     state_dict = torch.load(fp)
-    model.load_state_dict(state_dict)
-    model.load_state_dict(state_dict['model'])
-    optimizer.load_state_dict(state_dict['optimizer'])
-    best_acc = state_dict['acc']
-  else:
-    best_acc = 0.0
+    if 'model' in state_dict:
+      model.load_state_dict(state_dict['model'])
+      optimizer.load_state_dict(state_dict['optimizer'])
+      best_acc = state_dict['acc']
+      epoch = state_dict['epoch']
+      step = state_dict['step']
+    else:
+      model.load_state_dict(state_dict)
 
   scheduler = ReduceLROnPlateau(optimizer=optimizer, patience=5, min_lr=1e-5)
 
@@ -71,8 +77,6 @@ def train(args):
     fig.savefig(log_dp / 'stats.png', dpi=400)
 
   ''' Train '''
-  epoch = 0
-  step = 0
   train_loss = []
   train_acc  = []
   valid_acc  = []
