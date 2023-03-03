@@ -132,6 +132,7 @@ def train(args):
     scheduler.step()
 
     if valid_acc[-1] > best_acc:
+      best_acc = valid_acc[-1]
       print('save new best ...')
       save_ckpt(log_dp / 'model-best.pth')
       save_plot(log_dp / 'stats-best.png')
