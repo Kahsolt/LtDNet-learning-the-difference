@@ -7,14 +7,14 @@ from pathlib import Path
 from argparse import ArgumentParser
 
 import torch
-import torchvision.models as M
 import torchvision.datasets as DS
 import numpy as np
 from scipy import stats
 from tqdm import tqdm
 
-from data import ClassSampleDataset
 from preprocess import get_d
+from data import ClassSampleDataset
+from model import ResNet18_32x32
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -24,7 +24,7 @@ def test(args):
   print('>> [Test]')
 
   ''' Model '''
-  model = M.resnet18().to(device)
+  model = ResNet18_32x32(num_classes=100, pretrained=False).to(device)
 
   fp: Path = args.log_path / args.exp_name / 'model-best.pth'
   state_dict = torch.load(fp)

@@ -9,11 +9,11 @@ import matplotlib.pyplot as plt
 
 import torch
 import torch.nn.functional as F
-import torchvision.models as M
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
 
 from data import DataLoader, ClassDiffDataset
+from model import ResNet18_32x32
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -25,7 +25,7 @@ def train(args):
   log_dp.mkdir(exist_ok=True, parents=True)
 
   ''' Model '''
-  model = M.resnet18(weights=M.ResNet18_Weights.DEFAULT).to(device)
+  model = ResNet18_32x32(num_classes=100, pretrained=True).to(device)
   optimizer = Adam(model.parameters(), lr=args.lr)
   
   fp = log_dp / 'model-best.pth'
@@ -107,7 +107,7 @@ def train(args):
         loss_list.append(loss.item())
         acc_list.append(ok / total)
         print(f"[Epoch {epoch+1} / Step {step}] loss: {loss_list[-1]:.7f}, accuracy: {acc_list[-1]:.3%}")
- 
+
     train_loss.append(sum(loss_list) / len(loss_list))
     train_acc .append(ok / total)
     print(f">> [Epoch {epoch+1}] Train - loss: {train_loss[-1]:.7f}, accuracy: {train_acc[-1]:.3%}")
@@ -129,15 +129,16 @@ def train(args):
     valid_acc.append(ok / total)
     print(f">> [Epoch {epoch+1}] Valid - accuracy: {valid_acc[-1]:.3%}")
 
-    scheduler.step(valid_acc[-1])
+    scheduler.step()
 
     if valid_acc[-1] > best_acc:
       print('save new best ...')
       save_ckpt(log_dp / 'model-best.pth')
       save_plot(log_dp / 'stats-best.png')
 
-    save_plot(log_dp / f'stats-{epoch+1}.png')
-    save_ckpt(log_dp / f'model-{epoch+1}.pth')
+    if epoch + 1 % 10 == 0:
+      save_plot(log_dp / f'stats-{epoch+1}.png')
+      save_ckpt(log_dp / f'model-{epoch+1}.pth')
 
   save_ckpt(log_dp / 'model-final.pth')
   save_plot(log_dp / 'stats-final.png')
@@ -146,7 +147,7 @@ def train(args):
 if __name__ == '__main__':
   parser = ArgumentParser()
   parser.add_argument('-D', '--dataset',    default='cifar10')
-  parser.add_argument('-E', '--epochs',     default=50, type=int)
+  parser.add_argument('-E', '--epochs',     default=100, type=int)
   parser.add_argument('-B', '--batch_size', default=128, type=int)
   parser.add_argument('--lr',               default=0.01, type=float)
   parser.add_argument('--data_path', type=Path, default=Path('preprocessed'))
