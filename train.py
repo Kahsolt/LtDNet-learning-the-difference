@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 import torchvision.models as M
 from torch.optim import Adam
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import StepLR
 
 from data import DataLoader, ClassDiffDataset
 
@@ -25,26 +25,25 @@ def train(args):
   log_dp.mkdir(exist_ok=True, parents=True)
 
   ''' Model '''
-  model = M.resnet50(weights=M.ResNet50_Weights.DEFAULT).to(device)
+  model = M.resnet18(weights=M.ResNet18_Weights.DEFAULT).to(device)
   optimizer = Adam(model.parameters(), lr=args.lr)
-
-  best_acc = 0.0
-  epoch = 0
-  step = 0
   
   fp = log_dp / 'model-best.pth'
   if fp.exists():
     state_dict = torch.load(fp)
-    if 'model' in state_dict:
-      model.load_state_dict(state_dict['model'])
-      optimizer.load_state_dict(state_dict['optimizer'])
-      best_acc = state_dict['acc']
-      epoch = state_dict['epoch']
-      step = state_dict['step']
-    else:
-      model.load_state_dict(state_dict)
+    model.load_state_dict(state_dict)
+  fp_optim = fp.with_name(fp.name + '.optim')
+  if fp_optim.exists():
+    optimizer.load_state_dict(state_dict['optimizer'])
+    best_acc = state_dict['acc']
+    last_epoch = state_dict['epoch']
+    step = state_dict['step']
+  else:
+    best_acc = 0.0
+    last_epoch = -1
+    step = 0
 
-  scheduler = ReduceLROnPlateau(optimizer=optimizer, patience=5, min_lr=1e-5)
+  scheduler = StepLR(optimizer=optimizer, step_size=10, gamma=0.25, last_epoch=last_epoch)
 
   ''' Data '''
   t = time()
@@ -55,16 +54,17 @@ def train(args):
   print(f'load dataset: {time() - t:.3f}s')
 
   ''' Helper '''
+  epoch = None    # fix closure NameError
   def save_ckpt(fp:Path):
+    torch.save(model.state_dict(), fp)
     torch.save({
-      'model': model.state_dict(),
       'optimizer': optimizer.state_dict(),
       'epoch': epoch,
       'step': step,
       'loss': train_loss[-1],
       'acc': valid_acc[-1],
       'acc_train': train_acc[-1],
-    }, fp)
+    }, fp.with_name(fp.name + '.optim'))
 
   def save_plot(fp:Path):
     fig, ax1 = plt.subplots()
@@ -74,13 +74,13 @@ def train(args):
     ax2.plot(loss_list, c='b', alpha=0.75, label='loss')
     fig.legend()
     fig.suptitle(args.exp_name)
-    fig.savefig(log_dp / 'stats.png', dpi=400)
+    fig.savefig(fp, dpi=400)
 
   ''' Train '''
   train_loss = []
   train_acc  = []
   valid_acc  = []
-  for epoch in range(args.epochs):
+  for epoch in range(max(0, last_epoch), args.epochs):
     ''' train '''
     loss_list, acc_list = [], []
     total, ok = 0, 0
@@ -89,8 +89,8 @@ def train(args):
     for X, Y in trainloader:
       step += 1
 
-      X = X.float().to(device)
-      Y = Y.long(). to(device)
+      X = X.to(device)
+      Y = Y.to(device)
 
       optimizer.zero_grad()
       output = model(X)
@@ -98,8 +98,10 @@ def train(args):
       loss.backward()
       optimizer.step()
 
-      total += len(Y)
-      ok    += (Y == output.argmax(axis=-1)).sum().item()
+      with torch.no_grad():
+        pred = output.argmax(axis=-1)
+        total += len(Y)
+        ok    += (Y == pred).sum().item()
 
       if step % 1000 == 0:
         loss_list.append(loss.item())
@@ -113,14 +115,16 @@ def train(args):
     ''' valid '''
     model.eval()
     ok, total = 0, 0
-    for X, Y in validloader:
-      X = X.float().to(device)
-      Y = Y.long(). to(device)
+    with torch.no_grad():
+      for X, Y in validloader:
+        X = X.to(device)
+        Y = Y.to(device)
 
-      output = model(X)
+        output = model(X)
+        pred = output.argmax(axis=-1)
 
-      total += len(Y)
-      ok    += (Y == output.argmax(axis=-1)).sum().item()
+        total += len(Y)
+        ok    += (Y == pred).sum().item()
 
     valid_acc.append(ok / total)
     print(f">> [Epoch {epoch+1}] Valid - accuracy: {valid_acc[-1]:.3%}")
@@ -132,9 +136,8 @@ def train(args):
       save_ckpt(log_dp / 'model-best.pth')
       save_plot(log_dp / 'stats-best.png')
 
-    save_plot(log_dp / f'stats-{epoch}.png')
-    if epoch % 10 == 0:
-      save_ckpt(log_dp / f'model-{epoch}.pth')
+    save_plot(log_dp / f'stats-{epoch+1}.png')
+    save_ckpt(log_dp / f'model-{epoch+1}.pth')
 
   save_ckpt(log_dp / 'model-final.pth')
   save_plot(log_dp / 'stats-final.png')
@@ -142,20 +145,14 @@ def train(args):
 
 if __name__ == '__main__':
   parser = ArgumentParser()
-  parser.add_argument('-M', '--model',      default='resnet50')
   parser.add_argument('-D', '--dataset',    default='cifar10')
-  parser.add_argument('-E', '--epochs',     default=100, type=int)
+  parser.add_argument('-E', '--epochs',     default=50, type=int)
   parser.add_argument('-B', '--batch_size', default=128, type=int)
-  parser.add_argument('--lr',               default=0.1, type=float)
+  parser.add_argument('--lr',               default=0.01, type=float)
   parser.add_argument('--data_path', type=Path, default=Path('preprocessed'))
   parser.add_argument('--log_path',  type=Path, default=Path('log'))
   args = parser.parse_args()
 
-  args.exp_name = f'{args.model}_{args.dataset}'
-
-  #model_fp: Path = args.log_path / args.exp_name / 'model.pth'
-  #if model_fp.exists():
-  #  print(f'>> ignore {args.exp_name} due to file exists')
-  #  exit(0)
+  args.exp_name = f'resnet18_{args.dataset}'
 
   train(args)

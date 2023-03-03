@@ -10,15 +10,20 @@ import random ; random.seed(114514)
 import numpy as np
 import torchvision.datasets as D
 
+'''
+dtype note:
+  preprocessed/<dataset>/<train|valid>/single: uint8, [0, 255]
+  preprocessed/<dataset>/<train|valid>/cross:  int8,  [-128, 127]
+'''
 
 def get_d(x: np.ndarray, y: np.ndarray, dtype=np.int8) -> np.ndarray:
-  x = x.astype(np.int16)    # int16
+  x = x.astype(np.int16)    # to tmp int16, avoiding numerical overflow
   y = y.astype(np.int16)
   d = x - y                 # [-511, 511]
   assert -512 < d.min() and d.max() < 512
   d //= 4                   # rescale `d` for saving as int8 to save disk space...
   assert np.iinfo(dtype).min < d.min() and d.max() < np.iinfo(dtype).max
-  d = d.astype(np.int8)     # int8
+  d = d.astype(dtype)       # int8
   return d
 
 def save_shard(data:np.ndarray, fp:Path):
@@ -50,7 +55,7 @@ def preprocess_cifar10(args, num_classes=10):
     log(f'average samples for each class: {n_avg}')
     for i in sorted(samples.keys()):
       log(f'  class-{i}: {len(samples[i])} ({len(samples[i]) / n_total:.3%})')
-    
+
     for lbl, imgs in samples.items():
       save_shard(np.stack(imgs, axis=0), args.out_dp / split / 'single' / f'{lbl}.npy')
 
@@ -60,7 +65,8 @@ def preprocess_cifar10(args, num_classes=10):
     for i, imgi in samples.items():
       for j, imgj in samples.items():
         idx_grid = [ (x, y) for x in range(len(imgi)) for y in range(len(imgj)) ]
-        idx_sel = random.sample(idx_grid, int(args.ratio * n_avg))
+        n_resampled = int(args.ratio * n_avg) if split == 'train' else int(args.ratio_test * n_avg)
+        idx_sel = random.sample(idx_grid, n_resampled)
         imgx = [ get_d(imgi[x], imgj[y]) for x, y in idx_sel ]
         lblx = i * num_classes + j     # NC-based number
         lblx: str = str(lblx).rjust(lbllen, '0')
@@ -74,7 +80,8 @@ if __name__ == '__main__':
 
   parser = ArgumentParser()
   parser.add_argument('-D', '--dataset', default='cifar10', choices=PREPROCESSORS)
-  parser.add_argument('-R', '--ratio', type=float, default=10, help='resample ratio for each crossed-class')    # := 交叉类的样本数 / 原始类平均样本数
+  parser.add_argument('-R', '--ratio', type=float, default=5, help='resample ratio for each crossed-class (train)')    # := 交叉类的样本数 / 原始类平均样本数
+  parser.add_argument('-P', '--ratio_test', type=float, default=0.2, help='resample ratio for each crossed-class (valid/test)')
   parser.add_argument('--rdata_path',  type=Path,  default=Path('data'))
   parser.add_argument('--data_path',   type=Path,  default=Path('preprocessed'))
   args = parser.parse_args()
