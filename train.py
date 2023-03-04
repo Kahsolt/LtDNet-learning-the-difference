@@ -101,6 +101,7 @@ def train(args):
 
       X = X.to(device)
       Y = Y.to(device)
+      Y_rev = rev_label(Y, NUM_CLASSES)
 
       optimizer.zero_grad()
       output = model(X)
@@ -108,16 +109,21 @@ def train(args):
       loss.backward()
       optimizer.step()
 
+      with torch.no_grad():
+        pred = output.argmax(axis=-1)
+        ok    += (Y == pred).sum().item()
+        total += len(Y)
+
       optimizer.zero_grad()
       output = model(-X)
-      loss = F.cross_entropy(output, rev_label(Y, NUM_CLASSES))
+      loss = F.cross_entropy(output, Y_rev)
       loss.backward()
       optimizer.step()
 
       with torch.no_grad():
         pred = output.argmax(axis=-1)
-        total += len(Y)
-        ok    += (Y == pred).sum().item()
+        ok    += (Y_rev == pred).sum().item()
+        total += len(Y_rev)
 
       if step % 1000 == 0:
         loss_list.append(loss.item())
