@@ -6,7 +6,6 @@ from pathlib import Path
 import random
 import gc
 
-import torch
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 
@@ -60,7 +59,7 @@ class ClassSampleDataset:
   def num_classes(self):
     return len(self.samples)
   
-  def get_samples_of_class(self, label:int, count=10):
+  def get_samples_of_class(self, label:int, count=10) -> np.ndarray:
     nlen = len(self.samples[label])
     idx = random.sample(range(nlen), k=count)
     return self.samples[label][idx, ...]     # int8

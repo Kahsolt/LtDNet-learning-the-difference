@@ -60,7 +60,10 @@ def save_hist(split_dp:Path, img_dp:Path, name:str) -> Tensor:
   for idx, npy_fp in enumerate(npy_fps):
     data = np.load(npy_fp)
     ax = axs[idx // n_col][idx % n_col]
-    ax.hist(data.flatten(), bins=256)
+    if   'single' in name: vrange = (0, 255)
+    elif 'cross'  in name: vrange = (-128, 127)
+    else: raise ValueError(f'unknown name: {name}')
+    ax.hist(data.flatten(), bins=128, range=vrange)
   fig.suptitle(name)
   fig.tight_layout()
   fig.savefig(img_dp / f'{name}-hist.png')

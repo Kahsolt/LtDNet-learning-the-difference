@@ -8,6 +8,7 @@ from argparse import ArgumentParser
 import matplotlib.pyplot as plt
 
 import torch
+from torch import Tensor
 import torch.nn.functional as F
 from torch.optim import Adam
 from torch.optim.lr_scheduler import StepLR
@@ -16,6 +17,13 @@ from data import DataLoader, ClassDiffDataset
 from model import ResNet18_32x32
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+
+def rev_label(Y:Tensor, num_classes:int) -> Tensor:
+  i = torch.div(Y, num_classes, rounding_mode='floor')
+  j = Y % num_classes
+  k = j * num_classes + i
+  return k
 
 
 def train(args):
@@ -34,6 +42,7 @@ def train(args):
     model.load_state_dict(state_dict)
   fp_optim = fp.with_name(fp.name + '.optim')
   if fp_optim.exists():
+    state_dict = torch.load(fp_optim)
     optimizer.load_state_dict(state_dict['optimizer'])
     best_acc = state_dict['acc']
     last_epoch = state_dict['epoch']
@@ -52,6 +61,7 @@ def train(args):
   validset = ClassDiffDataset(args.data_path / args.dataset, split='valid')
   validloader = DataLoader(validset, batch_size=1, shuffle=False)
   print(f'load dataset: {time() - t:.3f}s')
+  NUM_CLASSES = 10
 
   ''' Helper '''
   epoch = None    # fix closure NameError
@@ -68,8 +78,8 @@ def train(args):
 
   def save_plot(fp:Path):
     fig, ax1 = plt.subplots()
-    ax1.plot(valid_acc, c='r', alpha=0.75, label='acc tr.')
-    ax1.plot(train_acc, c='g', alpha=0.75, label='acc va.')
+    ax1.plot(valid_acc, c='r', alpha=0.75, label='acc va.')
+    ax1.plot(train_acc, c='g', alpha=0.75, label='acc tr.')
     ax2 = ax1.twinx()
     ax2.plot(loss_list, c='b', alpha=0.75, label='loss')
     fig.legend()
@@ -95,6 +105,12 @@ def train(args):
       optimizer.zero_grad()
       output = model(X)
       loss = F.cross_entropy(output, Y)
+      loss.backward()
+      optimizer.step()
+
+      optimizer.zero_grad()
+      output = model(-X)
+      loss = F.cross_entropy(output, rev_label(Y, NUM_CLASSES))
       loss.backward()
       optimizer.step()
 
@@ -137,7 +153,7 @@ def train(args):
       save_ckpt(log_dp / 'model-best.pth')
       save_plot(log_dp / 'stats-best.png')
 
-    if epoch + 1 % 10 == 0:
+    if (epoch + 1) % 10 == 0:
       save_plot(log_dp / f'stats-{epoch+1}.png')
       save_ckpt(log_dp / f'model-{epoch+1}.pth')
 
