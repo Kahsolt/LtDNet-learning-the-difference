@@ -5,7 +5,7 @@ __pycache__/
 # data
 data/
 preprocessed/
-img/
+#img/
 
 # logs
 log/
